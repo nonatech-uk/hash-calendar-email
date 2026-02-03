@@ -209,6 +209,7 @@ class GH3_Email_Webhook {
     private function send_export_email($to, $settings) {
         $fields = array(
             'run_number' => '_gh3_run_number',
+            'title'      => '_post_title',
             'run_date'   => '_gh3_run_date',
             'start_time' => '_gh3_start_time',
             'hares'      => '_gh3_hares',
@@ -236,7 +237,11 @@ class GH3_Email_Webhook {
         foreach ($posts as $post) {
             $row = array();
             foreach ($fields as $key => $meta_key) {
-                $row[] = get_post_meta($post->ID, $meta_key, true);
+                if ($key === 'title') {
+                    $row[] = $post->post_title;
+                } else {
+                    $row[] = get_post_meta($post->ID, $meta_key, true);
+                }
             }
             fputcsv($fp, $row);
         }
@@ -299,7 +304,7 @@ class GH3_Email_Webhook {
         $header = str_getcsv(array_shift($lines));
         $header = array_map('trim', array_map('strtolower', $header));
 
-        $valid_fields = array('run_number', 'run_date', 'start_time', 'hares', 'location', 'what3words', 'maps_url', 'oninn', 'notes');
+        $valid_fields = array('run_number', 'title', 'run_date', 'start_time', 'hares', 'location', 'what3words', 'maps_url', 'oninn', 'notes');
         $field_indices = array();
         foreach ($valid_fields as $field) {
             $index = array_search($field, $header);
