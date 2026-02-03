@@ -170,15 +170,17 @@ class GH3_Email_Webhook {
     private function send_confirmation_email($to, $result, $settings) {
         $action = $result['action'] === 'created' ? 'created' : 'updated';
         $title = $result['title'];
+        $run_number = $result['fields_set']['run_number'] ?? '';
 
-        $subject = 'GH3: ' . $title . ' ' . $action;
+        // Subject: include run number if present
+        $subject_prefix = $run_number ? 'Run #' . $run_number . ' ' : '';
+        $subject = 'GH3: ' . $subject_prefix . $title . ' ' . $action;
 
         $lines = array();
         $lines[] = '"' . $title . '" has been ' . $action . '.';
         $lines[] = '';
 
         $field_labels = array(
-            'run_number' => 'Run #',
             'run_date'   => 'Date',
             'hares'      => 'Hare(s)',
             'location'   => 'Location',
