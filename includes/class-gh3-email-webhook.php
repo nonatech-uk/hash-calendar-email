@@ -71,6 +71,13 @@ class GH3_Email_Webhook {
             return new WP_REST_Response(array('status' => 'ok'), 200);
         }
 
+        // Handle help request
+        if (strcasecmp(trim($subject), 'help') === 0) {
+            $this->log('Help requested by ' . $from);
+            $this->send_help_email($from, $settings);
+            return new WP_REST_Response(array('status' => 'ok'), 200);
+        }
+
         // Parse email with Claude
         $parser = new GH3_Email_Parser();
         $parsed = $parser->parse_email($subject, $email_body);
@@ -183,6 +190,99 @@ class GH3_Email_Webhook {
     }
 
     /**
+     * Send help email with usage instructions
+     */
+    private function send_help_email($to, $settings) {
+        $from_email = $settings['from_email'] ?: $settings['smtp_user'];
+        $subject = 'GH3: Email Gateway Help';
+
+        $html = '<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+
+<h2 style="color: #2271b1; margin-top: 0;">GH3 Hash Runs &ndash; Email Gateway</h2>
+
+<p>Send an email to <strong>' . esc_html($from_email) . '</strong> to create or update a hash run. Just write naturally &ndash; the details will be extracted automatically.</p>
+
+<h3 style="color: #2271b1;">Creating a new run</h3>
+<p>Include at least a <strong>date</strong>. Everything else is optional.</p>
+
+<div style="background: #f0f6fc; border: 1px solid #c8d6e5; border-radius: 6px; padding: 16px; margin: 12px 0;">
+<strong>Example:</strong><br><br>
+<em>Subject:</em> Next Monday\'s run<br><br>
+Run 2120, hare is Speedy, next Monday at the Cricket Ground Shere.<br>
+On Inn: The William Bray<br>
+///happy.running.trail
+</div>
+
+<h3 style="color: #2271b1;">Updating an existing run</h3>
+<p>Include the <strong>run number</strong> and only the fields you want to change. No date needed for updates.</p>
+
+<div style="background: #f0f6fc; border: 1px solid #c8d6e5; border-radius: 6px; padding: 16px; margin: 12px 0;">
+<strong>Example:</strong><br><br>
+<em>Subject:</em> Run 2120 update<br><br>
+Run 2120 &ndash; start time 11am, note: wear fancy dress
+</div>
+
+<h3 style="color: #2271b1;">Supported fields</h3>
+<table style="border-collapse: collapse; width: 100%; margin: 12px 0;">
+<tr style="background: #f0f6fc;">
+    <td style="padding: 8px 12px; border: 1px solid #c8d6e5;"><strong>Run number</strong></td>
+    <td style="padding: 8px 12px; border: 1px solid #c8d6e5;">e.g. Run 2120</td>
+</tr>
+<tr>
+    <td style="padding: 8px 12px; border: 1px solid #c8d6e5;"><strong>Date</strong></td>
+    <td style="padding: 8px 12px; border: 1px solid #c8d6e5;">Any format &ndash; &ldquo;next Monday&rdquo;, &ldquo;15th March&rdquo;, &ldquo;2026-03-15&rdquo;</td>
+</tr>
+<tr style="background: #f0f6fc;">
+    <td style="padding: 8px 12px; border: 1px solid #c8d6e5;"><strong>Start time</strong></td>
+    <td style="padding: 8px 12px; border: 1px solid #c8d6e5;">Defaults to 19:30 if not specified</td>
+</tr>
+<tr>
+    <td style="padding: 8px 12px; border: 1px solid #c8d6e5;"><strong>Hare(s)</strong></td>
+    <td style="padding: 8px 12px; border: 1px solid #c8d6e5;">Who is laying the trail</td>
+</tr>
+<tr style="background: #f0f6fc;">
+    <td style="padding: 8px 12px; border: 1px solid #c8d6e5;"><strong>Location</strong></td>
+    <td style="padding: 8px 12px; border: 1px solid #c8d6e5;">Start location</td>
+</tr>
+<tr>
+    <td style="padding: 8px 12px; border: 1px solid #c8d6e5;"><strong>What3Words</strong></td>
+    <td style="padding: 8px 12px; border: 1px solid #c8d6e5;">e.g. ///happy.running.trail</td>
+</tr>
+<tr style="background: #f0f6fc;">
+    <td style="padding: 8px 12px; border: 1px solid #c8d6e5;"><strong>Google Maps link</strong></td>
+    <td style="padding: 8px 12px; border: 1px solid #c8d6e5;">Paste a maps URL</td>
+</tr>
+<tr>
+    <td style="padding: 8px 12px; border: 1px solid #c8d6e5;"><strong>On Inn</strong></td>
+    <td style="padding: 8px 12px; border: 1px solid #c8d6e5;">Pub or venue after the run</td>
+</tr>
+<tr style="background: #f0f6fc;">
+    <td style="padding: 8px 12px; border: 1px solid #c8d6e5;"><strong>Notes</strong></td>
+    <td style="padding: 8px 12px; border: 1px solid #c8d6e5;">Any other info</td>
+</tr>
+</table>
+
+<h3 style="color: #2271b1;">Tips</h3>
+<ul style="padding-left: 20px;">
+<li>You\'ll get a confirmation email with a link to the published run</li>
+<li>Write in any style &ndash; the AI will figure out the details</li>
+<li>To update a run, always include the run number</li>
+<li>Send an email with subject <strong>Help</strong> to see this message again</li>
+</ul>
+
+<hr style="border: none; border-top: 1px solid #ddd; margin: 24px 0;">
+<p style="color: #888; font-size: 13px;">GH3 Hash Runs Email Gateway &ndash; <a href="https://guildfordh3.org.uk" style="color: #2271b1;">guildfordh3.org.uk</a></p>
+
+</body>
+</html>';
+
+        $this->send_email($to, $subject, $html, $settings, true);
+    }
+
+    /**
      * Send error email via SMTP
      */
     private function send_error_email($to, $error_message, $settings) {
@@ -195,7 +295,7 @@ class GH3_Email_Webhook {
     /**
      * Send email using wp_mail with SMTP configuration
      */
-    private function send_email($to, $subject, $body, $settings) {
+    private function send_email($to, $subject, $body, $settings, $is_html = false) {
         // Only configure SMTP if settings are present
         if (empty($settings['smtp_host']) || empty($settings['smtp_user'])) {
             $this->log('SMTP not configured, skipping confirmation email');
@@ -215,8 +315,13 @@ class GH3_Email_Webhook {
             $phpmailer->FromName   = $settings['from_name'] ?: 'GH3 Hash Runs';
         };
 
+        $headers = array();
+        if ($is_html) {
+            $headers[] = 'Content-Type: text/html; charset=UTF-8';
+        }
+
         add_action('phpmailer_init', $smtp_config);
-        $sent = wp_mail($to, $subject, $body);
+        $sent = wp_mail($to, $subject, $body, $headers);
         remove_action('phpmailer_init', $smtp_config);
 
         if (!$sent) {
