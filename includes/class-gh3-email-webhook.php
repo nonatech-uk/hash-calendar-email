@@ -97,29 +97,41 @@ class GH3_Email_Webhook {
 
     /**
      * Extract sender email address from ForwardEmail payload
+     *
+     * ForwardEmail uses mailparser's simpleParser which outputs from as:
+     * { "value": [{"address": "user@example.com", "name": "User"}], "text": "User <user@example.com>" }
      */
     private function extract_sender_email($body) {
         $from = $body['from'] ?? '';
 
-        // ForwardEmail may send from as a string like "Name <email@example.com>"
+        // simpleParser object format: { value: [{address, name}], text: "..." }
+        if (is_array($from)) {
+            // from.value[0].address (standard simpleParser format)
+            if (isset($from['value'][0]['address'])) {
+                return sanitize_email($from['value'][0]['address']);
+            }
+            // from.address (flat object)
+            if (isset($from['address'])) {
+                return sanitize_email($from['address']);
+            }
+            // Array of senders
+            if (isset($from[0]['address'])) {
+                return sanitize_email($from[0]['address']);
+            }
+            // from.text fallback - parse email from "Name <email>" string
+            if (isset($from['text']) && preg_match('/<([^>]+)>/', $from['text'], $matches)) {
+                return sanitize_email($matches[1]);
+            }
+        }
+
+        // String format: "Name <email@example.com>"
         if (is_string($from) && preg_match('/<([^>]+)>/', $from, $matches)) {
             return sanitize_email($matches[1]);
         }
 
-        // Or it may be a plain email address
+        // Plain email string
         if (is_string($from) && is_email($from)) {
             return sanitize_email($from);
-        }
-
-        // Or it may be an object/array with address field
-        if (is_array($from)) {
-            if (isset($from['address'])) {
-                return sanitize_email($from['address']);
-            }
-            // Could be array of senders, take first
-            if (isset($from[0]['address'])) {
-                return sanitize_email($from[0]['address']);
-            }
         }
 
         return '';
