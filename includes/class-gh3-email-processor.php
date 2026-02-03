@@ -35,6 +35,14 @@ class GH3_Email_Processor {
         $existing_post_id = null;
         $action = 'created';
 
+        // Normalise run_date to YYYY-MM-DD
+        if (!empty($parsed_data['run_date'])) {
+            $ts = strtotime($parsed_data['run_date']);
+            if ($ts !== false) {
+                $parsed_data['run_date'] = date('Y-m-d', $ts);
+            }
+        }
+
         // Check for existing run by run_number, then by run_date
         if (!empty($parsed_data['run_number'])) {
             $existing_post_id = $this->find_existing_run($parsed_data['run_number']);
