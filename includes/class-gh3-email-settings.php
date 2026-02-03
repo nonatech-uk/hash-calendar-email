@@ -222,7 +222,7 @@ class GH3_Email_Settings {
         $secret = $settings['webhook_secret'];
 
         if ($secret) {
-            $url = rest_url('gh3-email/v1/incoming') . '?token=' . $secret . '&raw=false&attachments=false';
+            $url = rest_url('gh3-email/v1/incoming') . '?token=' . $secret . '&raw=false';
             echo '<div class="gh3-email-webhook-url">';
             echo '<strong>' . esc_html__('Webhook URL:', 'gh3-hash-runs-email') . '</strong><br>';
             echo '<code>' . esc_html($url) . '</code>';

@@ -71,10 +71,24 @@ class GH3_Email_Webhook {
             return new WP_REST_Response(array('status' => 'ok'), 200);
         }
 
-        // Handle help request
-        if (strcasecmp(trim($subject), 'help') === 0) {
+        // Handle special commands
+        $subject_trimmed = strtolower(trim($subject));
+
+        if ($subject_trimmed === 'help') {
             $this->log('Help requested by ' . $from);
             $this->send_help_email($from, $settings);
+            return new WP_REST_Response(array('status' => 'ok'), 200);
+        }
+
+        if ($subject_trimmed === 'export') {
+            $this->log('Export requested by ' . $from);
+            $this->send_export_email($from, $settings);
+            return new WP_REST_Response(array('status' => 'ok'), 200);
+        }
+
+        if ($subject_trimmed === 'import') {
+            $this->log('Import requested by ' . $from);
+            $this->handle_import($from, $body, $settings);
             return new WP_REST_Response(array('status' => 'ok'), 200);
         }
 
@@ -190,6 +204,210 @@ class GH3_Email_Webhook {
     }
 
     /**
+     * Send CSV export of all hash runs
+     */
+    private function send_export_email($to, $settings) {
+        $fields = array(
+            'run_number' => '_gh3_run_number',
+            'run_date'   => '_gh3_run_date',
+            'start_time' => '_gh3_start_time',
+            'hares'      => '_gh3_hares',
+            'location'   => '_gh3_location',
+            'what3words' => '_gh3_what3words',
+            'maps_url'   => '_gh3_maps_url',
+            'oninn'      => '_gh3_oninn',
+            'notes'      => '_gh3_notes',
+        );
+
+        $posts = get_posts(array(
+            'post_type'   => 'hash_run',
+            'post_status' => 'any',
+            'numberposts' => -1,
+            'meta_key'    => '_gh3_run_date',
+            'orderby'     => 'meta_value',
+            'order'       => 'ASC',
+        ));
+
+        // Build CSV
+        $csv_file = tempnam(sys_get_temp_dir(), 'gh3_export_');
+        $fp = fopen($csv_file, 'w');
+        fputcsv($fp, array_keys($fields));
+
+        foreach ($posts as $post) {
+            $row = array();
+            foreach ($fields as $key => $meta_key) {
+                $row[] = get_post_meta($post->ID, $meta_key, true);
+            }
+            fputcsv($fp, $row);
+        }
+        fclose($fp);
+
+        $csv_path = $csv_file . '.csv';
+        rename($csv_file, $csv_path);
+
+        $count = count($posts);
+        $subject = 'GH3: Hash Runs Export (' . $count . ' runs)';
+        $body = 'Attached is a CSV export of all ' . $count . ' hash runs.';
+
+        $this->send_email($to, $subject, $body, $settings, false, array($csv_path));
+
+        @unlink($csv_path);
+    }
+
+    /**
+     * Handle CSV import from email attachment
+     */
+    private function handle_import($to, $payload, $settings) {
+        $attachments = $payload['attachments'] ?? array();
+
+        if (empty($attachments)) {
+            $this->log('Import: No attachments found');
+            $this->send_error_email($to, 'No CSV file attached. Please attach a CSV file and resend.', $settings);
+            return;
+        }
+
+        // Find the CSV attachment
+        $csv_content = null;
+        foreach ($attachments as $attachment) {
+            $filename = $attachment['filename'] ?? '';
+            $content_type = $attachment['contentType'] ?? $attachment['type'] ?? '';
+
+            if (
+                substr($filename, -4) === '.csv' ||
+                strpos($content_type, 'csv') !== false ||
+                strpos($content_type, 'text/plain') !== false
+            ) {
+                $csv_content = $this->extract_attachment_content($attachment);
+                break;
+            }
+        }
+
+        if (empty($csv_content)) {
+            $this->log('Import: No CSV attachment found in ' . count($attachments) . ' attachments');
+            $this->send_error_email($to, 'No CSV file found in attachments. Please attach a .csv file.', $settings);
+            return;
+        }
+
+        // Parse CSV
+        $lines = array_filter(explode("\n", $csv_content));
+        if (count($lines) < 2) {
+            $this->send_error_email($to, 'CSV file is empty or has no data rows.', $settings);
+            return;
+        }
+
+        // Parse header row
+        $header = str_getcsv(array_shift($lines));
+        $header = array_map('trim', array_map('strtolower', $header));
+
+        $valid_fields = array('run_number', 'run_date', 'start_time', 'hares', 'location', 'what3words', 'maps_url', 'oninn', 'notes');
+        $field_indices = array();
+        foreach ($valid_fields as $field) {
+            $index = array_search($field, $header);
+            if ($index !== false) {
+                $field_indices[$field] = $index;
+            }
+        }
+
+        if (empty($field_indices)) {
+            $this->send_error_email($to, 'CSV header not recognised. Expected columns: ' . implode(', ', $valid_fields), $settings);
+            return;
+        }
+
+        // Process rows
+        $processor = new GH3_Email_Processor();
+        $created = 0;
+        $updated = 0;
+        $errors = array();
+
+        foreach ($lines as $line_num => $line) {
+            $line = trim($line);
+            if (empty($line)) {
+                continue;
+            }
+
+            $values = str_getcsv($line);
+            $parsed_data = array();
+
+            foreach ($field_indices as $field => $index) {
+                if (isset($values[$index]) && $values[$index] !== '') {
+                    $parsed_data[$field] = trim($values[$index]);
+                }
+            }
+
+            if (empty($parsed_data['run_date']) && empty($parsed_data['run_number'])) {
+                $errors[] = 'Row ' . ($line_num + 2) . ': no date or run number';
+                continue;
+            }
+
+            $result = $processor->process($parsed_data, $to);
+
+            if (is_wp_error($result)) {
+                $errors[] = 'Row ' . ($line_num + 2) . ': ' . $result->get_error_message();
+            } elseif ($result['action'] === 'created') {
+                $created++;
+            } else {
+                $updated++;
+            }
+        }
+
+        // Send summary
+        $subject = 'GH3: Import complete';
+        $lines = array();
+        $lines[] = 'CSV import complete.';
+        $lines[] = '';
+        $lines[] = 'Created: ' . $created;
+        $lines[] = 'Updated: ' . $updated;
+
+        if (!empty($errors)) {
+            $lines[] = 'Errors: ' . count($errors);
+            $lines[] = '';
+            foreach ($errors as $error) {
+                $lines[] = '  - ' . $error;
+            }
+        }
+
+        $this->log('Import: created=' . $created . ' updated=' . $updated . ' errors=' . count($errors));
+        $this->send_email($to, $subject, implode("\n", $lines), $settings);
+    }
+
+    /**
+     * Extract content from a ForwardEmail attachment
+     *
+     * simpleParser may encode content as:
+     * - Buffer: {"type": "Buffer", "data": [byte, byte, ...]}
+     * - Base64 string
+     * - Plain string
+     */
+    private function extract_attachment_content($attachment) {
+        $content = $attachment['content'] ?? '';
+
+        // Buffer format: {"type": "Buffer", "data": [...]}
+        if (is_array($content) && isset($content['type']) && $content['type'] === 'Buffer' && isset($content['data'])) {
+            $bytes = $content['data'];
+            $str = '';
+            foreach ($bytes as $byte) {
+                $str .= chr($byte);
+            }
+            return $str;
+        }
+
+        // Base64 encoded string
+        if (is_string($content) && preg_match('/^[A-Za-z0-9+\/=]+$/', $content) && strlen($content) > 20) {
+            $decoded = base64_decode($content, true);
+            if ($decoded !== false) {
+                return $decoded;
+            }
+        }
+
+        // Plain string
+        if (is_string($content)) {
+            return $content;
+        }
+
+        return '';
+    }
+
+    /**
      * Send help email with usage instructions
      */
     private function send_help_email($to, $settings) {
@@ -265,6 +483,18 @@ Run 2120 &ndash; start time 11am, note: wear fancy dress
 </tr>
 </table>
 
+<h3 style="color: #2271b1;">Bulk export &amp; import</h3>
+<table style="border-collapse: collapse; width: 100%; margin: 12px 0;">
+<tr style="background: #f0f6fc;">
+    <td style="padding: 8px 12px; border: 1px solid #c8d6e5;"><strong>Export</strong></td>
+    <td style="padding: 8px 12px; border: 1px solid #c8d6e5;">Send an email with subject <strong>Export</strong> to receive a CSV of all runs</td>
+</tr>
+<tr>
+    <td style="padding: 8px 12px; border: 1px solid #c8d6e5;"><strong>Import</strong></td>
+    <td style="padding: 8px 12px; border: 1px solid #c8d6e5;">Send an email with subject <strong>Import</strong> and attach a CSV file. Use the same column headers as the export.</td>
+</tr>
+</table>
+
 <h3 style="color: #2271b1;">Tips</h3>
 <ul style="padding-left: 20px;">
 <li>You\'ll get a confirmation email with a link to the published run</li>
@@ -295,7 +525,7 @@ Run 2120 &ndash; start time 11am, note: wear fancy dress
     /**
      * Send email using wp_mail with SMTP configuration
      */
-    private function send_email($to, $subject, $body, $settings, $is_html = false) {
+    private function send_email($to, $subject, $body, $settings, $is_html = false, $attachments = array()) {
         // Only configure SMTP if settings are present
         if (empty($settings['smtp_host']) || empty($settings['smtp_user'])) {
             $this->log('SMTP not configured, skipping confirmation email');
@@ -321,7 +551,7 @@ Run 2120 &ndash; start time 11am, note: wear fancy dress
         }
 
         add_action('phpmailer_init', $smtp_config);
-        $sent = wp_mail($to, $subject, $body, $headers);
+        $sent = wp_mail($to, $subject, $body, $headers, $attachments);
         remove_action('phpmailer_init', $smtp_config);
 
         if (!$sent) {
