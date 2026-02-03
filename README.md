@@ -58,7 +58,17 @@ This creates a hash run with:
 
 ## Updating Existing Runs
 
-Include the run number in your email to update an existing run rather than creating a new one.
+Include the run number in your email to update an existing run rather than creating a new one. Only the fields mentioned in the email will be changed.
+
+## Email Commands
+
+Send an email with one of these subjects to trigger a command instead of creating/updating a run:
+
+| Subject | Description |
+|---------|-------------|
+| **Help** | Receive an HTML email with full usage instructions, supported fields, and examples |
+| **Export** | Receive a CSV attachment of all hash runs |
+| **Import** | Attach a CSV file (same format as the export) to bulk create or update runs |
 
 ## License
 
