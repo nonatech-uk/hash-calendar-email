@@ -58,6 +58,11 @@ class GH3_Email_Processor {
                 'post_title'  => $title,
                 'post_status' => 'publish',
             ));
+
+            // Force publish - WordPress overrides to 'future' for future-dated posts
+            global $wpdb;
+            $wpdb->update($wpdb->posts, array('post_status' => 'publish'), array('ID' => $post_id));
+            clean_post_cache($post_id);
         } else {
             // Create new post
             $title = $this->build_title($parsed_data);
@@ -71,6 +76,11 @@ class GH3_Email_Processor {
             if (is_wp_error($post_id)) {
                 return $post_id;
             }
+
+            // Force publish - WordPress overrides to 'future' for future-dated posts
+            global $wpdb;
+            $wpdb->update($wpdb->posts, array('post_status' => 'publish'), array('ID' => $post_id));
+            clean_post_cache($post_id);
         }
 
         // Update meta fields (only those present in parsed data)
