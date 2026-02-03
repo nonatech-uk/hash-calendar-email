@@ -37,10 +37,7 @@ class GH3_Email_Processor {
 
         // Normalise run_date to YYYY-MM-DD
         if (!empty($parsed_data['run_date'])) {
-            $ts = strtotime($parsed_data['run_date']);
-            if ($ts !== false) {
-                $parsed_data['run_date'] = date('Y-m-d', $ts);
-            }
+            $parsed_data['run_date'] = $this->normalise_date($parsed_data['run_date']);
         }
 
         // Check for existing run by run_number, then by run_date
@@ -196,6 +193,31 @@ class GH3_Email_Processor {
         }
 
         return 'Hash Run';
+    }
+
+    /**
+     * Normalise a date string to YYYY-MM-DD
+     *
+     * Handles DD/MM/YYYY (UK), YYYY-MM-DD (ISO), and other formats.
+     */
+    private function normalise_date($date) {
+        // Already YYYY-MM-DD
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            return $date;
+        }
+
+        // DD/MM/YYYY or DD-MM-YYYY (UK format)
+        if (preg_match('#^(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})$#', $date, $m)) {
+            return sprintf('%04d-%02d-%02d', $m[3], $m[2], $m[1]);
+        }
+
+        // Fallback to strtotime for other formats
+        $ts = strtotime($date);
+        if ($ts !== false) {
+            return date('Y-m-d', $ts);
+        }
+
+        return $date;
     }
 
     /**
