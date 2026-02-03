@@ -59,7 +59,8 @@ class GH3_Email_Parser {
         $status_code = wp_remote_retrieve_response_code($response);
         if ($status_code !== 200) {
             $error_body = wp_remote_retrieve_body($response);
-            error_log('GH3 Email Gateway: Claude API error (' . $status_code . '): ' . $error_body);
+            $log_file = WP_CONTENT_DIR . '/gh3-email-debug.log';
+            file_put_contents($log_file, '[' . date('Y-m-d H:i:s') . '] Claude API error (' . $status_code . '): ' . $error_body . "\n", FILE_APPEND);
             return new WP_Error('api_error', 'Claude API returned error (HTTP ' . $status_code . ').');
         }
 
@@ -79,18 +80,20 @@ class GH3_Email_Parser {
         $parsed = json_decode($text, true);
 
         if (json_last_error() !== JSON_ERROR_NONE) {
-            error_log('GH3 Email Gateway: Invalid JSON from Claude: ' . $text);
+            $log_file = WP_CONTENT_DIR . '/gh3-email-debug.log';
+            file_put_contents($log_file, '[' . date('Y-m-d H:i:s') . '] Invalid JSON from Claude: ' . $text . "\n", FILE_APPEND);
             return new WP_Error('invalid_json', 'Could not parse AI response. Please try rephrasing your email.');
         }
 
-        // Check for error field from Claude
-        if (!empty($parsed['error'])) {
+        // Check for error field from Claude (but allow if run_number present for updates)
+        if (!empty($parsed['error']) && empty($parsed['run_number'])) {
             return new WP_Error('parse_error', $parsed['error']);
         }
+        unset($parsed['error']);
 
-        // Validate required field
-        if (empty($parsed['run_date'])) {
-            return new WP_Error('no_date', 'No date found in your email. Please include a date for the run.');
+        // Date is required for new runs, but optional for updates to existing runs
+        if (empty($parsed['run_date']) && empty($parsed['run_number'])) {
+            return new WP_Error('no_date', 'No date found in your email. Please include a date or run number.');
         }
 
         return $parsed;
@@ -101,6 +104,7 @@ class GH3_Email_Parser {
      */
     private function get_system_prompt() {
         return 'You are a data extraction assistant for a Hash House Harriers running club.
+Today\'s date is ' . date('Y-m-d') . ' (' . date('l') . ').
 Extract structured data from the email below into JSON with these fields:
 - run_number (integer, optional - the hash run number)
 - run_date (string, YYYY-MM-DD format, required)
@@ -116,7 +120,7 @@ Extract structured data from the email below into JSON with these fields:
 Rules:
 - Return ONLY valid JSON, no markdown or explanation
 - If a field is not mentioned, omit it from the JSON
-- run_date is required. If you cannot determine a date, set "error": "No date found"
+- run_date is required for new runs. If updating an existing run (run_number given), date is optional. If no date and no run_number, set "error": "No date found"
 - Dates can be in any format in the email, convert to YYYY-MM-DD
 - Times should be 24hr HH:MM format
 - what3words always starts with ///

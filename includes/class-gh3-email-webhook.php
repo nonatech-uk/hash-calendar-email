@@ -36,7 +36,7 @@ class GH3_Email_Webhook {
         $settings = (new GH3_Email_Settings())->get_settings();
 
         if (empty($settings['webhook_secret']) || !hash_equals($settings['webhook_secret'], $token ?? '')) {
-            error_log('GH3 Email Gateway: Invalid webhook token');
+            $this->log('Invalid webhook token');
             return new WP_REST_Response(array('error' => 'Forbidden'), 403);
         }
 
@@ -55,8 +55,10 @@ class GH3_Email_Webhook {
             $email_body = wp_strip_all_tags($html);
         }
 
+        $this->log('From=' . $from . ' Subject=' . $subject);
+
         if (empty($from)) {
-            error_log('GH3 Email Gateway: No sender email found in payload');
+            $this->log('No sender email found in payload');
             return new WP_REST_Response(array('status' => 'ok'), 200);
         }
 
@@ -65,7 +67,7 @@ class GH3_Email_Webhook {
         $authorised = $settings_obj->get_authorised_emails();
 
         if (!in_array(strtolower($from), $authorised, true)) {
-            error_log('GH3 Email Gateway: Unauthorised sender: ' . $from);
+            $this->log('Unauthorised sender: ' . $from);
             return new WP_REST_Response(array('status' => 'ok'), 200);
         }
 
@@ -74,20 +76,24 @@ class GH3_Email_Webhook {
         $parsed = $parser->parse_email($subject, $email_body);
 
         if (is_wp_error($parsed)) {
-            error_log('GH3 Email Gateway: Parse error - ' . $parsed->get_error_message());
+            $this->log('Parse error: ' . $parsed->get_error_message());
             $this->send_error_email($from, $parsed->get_error_message(), $settings);
             return new WP_REST_Response(array('status' => 'ok'), 200);
         }
+
+        $this->log('Parsed: ' . wp_json_encode($parsed));
 
         // Process parsed data into hash_run post
         $processor = new GH3_Email_Processor();
         $result = $processor->process($parsed, $from);
 
         if (is_wp_error($result)) {
-            error_log('GH3 Email Gateway: Process error - ' . $result->get_error_message());
+            $this->log('Process error: ' . $result->get_error_message());
             $this->send_error_email($from, $result->get_error_message(), $settings);
             return new WP_REST_Response(array('status' => 'ok'), 200);
         }
+
+        $this->log('Result: ' . $result['action'] . ' post #' . $result['post_id'] . ' "' . $result['title'] . '"');
 
         // Send confirmation email
         $this->send_confirmation_email($from, $result, $settings);
@@ -192,7 +198,7 @@ class GH3_Email_Webhook {
     private function send_email($to, $subject, $body, $settings) {
         // Only configure SMTP if settings are present
         if (empty($settings['smtp_host']) || empty($settings['smtp_user'])) {
-            error_log('GH3 Email Gateway: SMTP not configured, skipping confirmation email');
+            $this->log('SMTP not configured, skipping confirmation email');
             return;
         }
 
@@ -214,7 +220,16 @@ class GH3_Email_Webhook {
         remove_action('phpmailer_init', $smtp_config);
 
         if (!$sent) {
-            error_log('GH3 Email Gateway: Failed to send email to ' . $to);
+            $this->log('Failed to send email to ' . $to);
         }
+    }
+
+    /**
+     * Log to plugin-specific file
+     */
+    private function log($message) {
+        $log_file = WP_CONTENT_DIR . '/gh3-email-debug.log';
+        $timestamp = date('Y-m-d H:i:s');
+        file_put_contents($log_file, "[$timestamp] $message\n", FILE_APPEND);
     }
 }

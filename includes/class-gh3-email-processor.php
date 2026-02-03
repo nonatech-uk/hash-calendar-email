@@ -32,16 +32,17 @@ class GH3_Email_Processor {
      * @return array|WP_Error Result array or error
      */
     public function process($parsed_data, $sender_email) {
-        if (empty($parsed_data['run_date'])) {
-            return new WP_Error('no_date', 'No date found in parsed data.');
-        }
-
         $existing_post_id = null;
         $action = 'created';
 
         // Check for existing run by run_number
         if (!empty($parsed_data['run_number'])) {
             $existing_post_id = $this->find_existing_run($parsed_data['run_number']);
+        }
+
+        // Date is required for new runs, optional for updates
+        if (empty($parsed_data['run_date']) && !$existing_post_id) {
+            return new WP_Error('no_date', 'No date found in parsed data.');
         }
 
         // Build title
