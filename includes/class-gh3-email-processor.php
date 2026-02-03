@@ -88,19 +88,27 @@ class GH3_Email_Processor {
 
         // Update meta fields (only those present in parsed data)
         $fields_set = array();
+        $fields_changed = array();
         foreach ($this->field_map as $data_key => $meta_key) {
             if (isset($parsed_data[$data_key]) && $parsed_data[$data_key] !== '') {
                 $value = $this->sanitize_field($data_key, $parsed_data[$data_key]);
+                if ($action === 'updated') {
+                    $old = get_post_meta($post_id, $meta_key, true);
+                    if ((string) $old !== (string) $value) {
+                        $fields_changed[] = $data_key;
+                    }
+                }
                 update_post_meta($post_id, $meta_key, $value);
                 $fields_set[$data_key] = $value;
             }
         }
 
         return array(
-            'action'     => $action,
-            'post_id'    => $post_id,
-            'title'      => $title,
-            'fields_set' => $fields_set,
+            'action'         => $action,
+            'post_id'        => $post_id,
+            'title'          => $title,
+            'fields_set'     => $fields_set,
+            'fields_changed' => $fields_changed,
         );
     }
 

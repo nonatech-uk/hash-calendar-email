@@ -320,8 +320,9 @@ class GH3_Email_Webhook {
 
         // Process rows
         $processor = new GH3_Email_Processor();
-        $created = 0;
-        $updated = 0;
+        $created_list = array();
+        $updated_list = array();
+        $skipped = 0;
         $errors = array();
 
         foreach ($lines as $line_num => $line) {
@@ -349,9 +350,11 @@ class GH3_Email_Webhook {
             if (is_wp_error($result)) {
                 $errors[] = 'Row ' . ($line_num + 2) . ': ' . $result->get_error_message();
             } elseif ($result['action'] === 'created') {
-                $created++;
+                $created_list[] = $result;
+            } elseif (!empty($result['fields_changed'])) {
+                $updated_list[] = $result;
             } else {
-                $updated++;
+                $skipped++;
             }
         }
 
@@ -360,18 +363,35 @@ class GH3_Email_Webhook {
         $lines = array();
         $lines[] = 'CSV import complete.';
         $lines[] = '';
-        $lines[] = 'Created: ' . $created;
-        $lines[] = 'Updated: ' . $updated;
+        $lines[] = 'Created: ' . count($created_list);
+        $lines[] = 'Updated: ' . count($updated_list);
+        $lines[] = 'Unchanged: ' . $skipped;
 
-        if (!empty($errors)) {
-            $lines[] = 'Errors: ' . count($errors);
+        if (!empty($created_list)) {
             $lines[] = '';
-            foreach ($errors as $error) {
-                $lines[] = '  - ' . $error;
+            $lines[] = '--- Created ---';
+            foreach ($created_list as $r) {
+                $lines[] = '  ' . $r['title'] . ' (' . ($r['fields_set']['run_date'] ?? '') . ')';
             }
         }
 
-        $this->log('Import: created=' . $created . ' updated=' . $updated . ' errors=' . count($errors));
+        if (!empty($updated_list)) {
+            $lines[] = '';
+            $lines[] = '--- Updated ---';
+            foreach ($updated_list as $r) {
+                $lines[] = '  ' . $r['title'] . ': ' . implode(', ', $r['fields_changed']);
+            }
+        }
+
+        if (!empty($errors)) {
+            $lines[] = '';
+            $lines[] = '--- Errors ---';
+            foreach ($errors as $error) {
+                $lines[] = '  ' . $error;
+            }
+        }
+
+        $this->log('Import: created=' . count($created_list) . ' updated=' . count($updated_list) . ' unchanged=' . $skipped . ' errors=' . count($errors));
         $this->send_email($to, $subject, implode("\n", $lines), $settings);
     }
 
