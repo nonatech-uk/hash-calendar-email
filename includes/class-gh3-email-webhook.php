@@ -172,12 +172,12 @@ class GH3_Email_Webhook {
         $title = $result['title'];
         $run_number = $result['fields_set']['run_number'] ?? '';
 
-        // Subject: include run number if present
-        $subject_prefix = $run_number ? 'Run #' . $run_number . ' ' : '';
-        $subject = 'GH3: ' . $subject_prefix . $title . ' ' . $action;
+        // Subject and heading: include run number if present
+        $full_title = $run_number ? 'Run #' . $run_number . ' - ' . $title : $title;
+        $subject = 'GH3: ' . $full_title . ' ' . $action;
 
         $lines = array();
-        $lines[] = '"' . $title . '" has been ' . $action . '.';
+        $lines[] = '"' . $full_title . '" has been ' . $action . '.';
         $lines[] = '';
 
         $field_labels = array(
