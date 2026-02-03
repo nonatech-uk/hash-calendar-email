@@ -1,0 +1,35 @@
+/**
+ * GH3 Hash Runs Email Gateway - Admin Styles
+ */
+
+.gh3-email-settings-wrap {
+    max-width: 800px;
+}
+
+.gh3-email-webhook-url {
+    background: #f0f6fc;
+    border: 1px solid #c8d6e5;
+    border-radius: 4px;
+    padding: 12px 16px;
+    margin: 8px 0 16px;
+}
+
+.gh3-email-webhook-url code {
+    display: block;
+    margin: 8px 0;
+    padding: 8px 12px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    word-break: break-all;
+    font-size: 13px;
+}
+
+.gh3-email-settings-wrap .form-table th {
+    width: 200px;
+}
+
+.gh3-email-settings-wrap textarea {
+    font-family: monospace;
+    font-size: 13px;
+}
