@@ -35,9 +35,12 @@ class GH3_Email_Processor {
         $existing_post_id = null;
         $action = 'created';
 
-        // Check for existing run by run_number
+        // Check for existing run by run_number, then by run_date
         if (!empty($parsed_data['run_number'])) {
             $existing_post_id = $this->find_existing_run($parsed_data['run_number']);
+        }
+        if (!$existing_post_id && !empty($parsed_data['run_date'])) {
+            $existing_post_id = $this->find_existing_run_by_date($parsed_data['run_date']);
         }
 
         // Date is required for new runs, optional for updates
@@ -112,6 +115,24 @@ class GH3_Email_Processor {
             'post_type'  => 'hash_run',
             'meta_key'   => '_gh3_run_number',
             'meta_value' => intval($run_number),
+            'numberposts' => 1,
+            'post_status' => 'any',
+        ));
+
+        return !empty($posts) ? $posts[0]->ID : null;
+    }
+
+    /**
+     * Find existing hash_run by run date
+     *
+     * @param string $run_date YYYY-MM-DD
+     * @return int|null Post ID or null
+     */
+    private function find_existing_run_by_date($run_date) {
+        $posts = get_posts(array(
+            'post_type'   => 'hash_run',
+            'meta_key'    => '_gh3_run_date',
+            'meta_value'  => sanitize_text_field($run_date),
             'numberposts' => 1,
             'post_status' => 'any',
         ));
