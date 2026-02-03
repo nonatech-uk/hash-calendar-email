@@ -85,6 +85,11 @@ class GH3_Email_Parser {
             return new WP_Error('invalid_json', 'Could not parse AI response. Please try rephrasing your email.');
         }
 
+        // Fallback: extract run number from subject if Claude didn't
+        if (empty($parsed['run_number']) && preg_match('/\bRun\s*#?\s*(\d+)\b/i', $subject, $m)) {
+            $parsed['run_number'] = intval($m[1]);
+        }
+
         // Check for error field from Claude (but allow if run_number present for updates)
         if (!empty($parsed['error']) && empty($parsed['run_number'])) {
             return new WP_Error('parse_error', $parsed['error']);
