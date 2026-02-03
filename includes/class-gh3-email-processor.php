@@ -45,20 +45,22 @@ class GH3_Email_Processor {
             return new WP_Error('no_date', 'No date found in parsed data.');
         }
 
-        // Build title
-        $title = $this->build_title($parsed_data);
-
         if ($existing_post_id) {
-            // Update existing post
+            // Update existing post - merge new data with existing meta for title
             $action = 'updated';
             $post_id = $existing_post_id;
 
+            $merged = $this->merge_with_existing($post_id, $parsed_data);
+            $title = $this->build_title($merged);
+
             wp_update_post(array(
-                'ID'         => $post_id,
-                'post_title' => $title,
+                'ID'          => $post_id,
+                'post_title'  => $title,
+                'post_status' => 'publish',
             ));
         } else {
             // Create new post
+            $title = $this->build_title($parsed_data);
             $post_id = wp_insert_post(array(
                 'post_type'   => 'hash_run',
                 'post_title'  => $title,
@@ -105,6 +107,22 @@ class GH3_Email_Processor {
         ));
 
         return !empty($posts) ? $posts[0]->ID : null;
+    }
+
+    /**
+     * Merge parsed data with existing post meta so title reflects full state
+     */
+    private function merge_with_existing($post_id, $parsed_data) {
+        $merged = array();
+        foreach ($this->field_map as $data_key => $meta_key) {
+            $existing = get_post_meta($post_id, $meta_key, true);
+            if (isset($parsed_data[$data_key]) && $parsed_data[$data_key] !== '') {
+                $merged[$data_key] = $parsed_data[$data_key];
+            } elseif ($existing !== '') {
+                $merged[$data_key] = $existing;
+            }
+        }
+        return $merged;
     }
 
     /**
